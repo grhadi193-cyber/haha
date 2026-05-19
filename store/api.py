@@ -1,96 +1,81 @@
-from typing import List
+from django.http import JsonResponse
 from ninja import Router
 from ninja.security import HttpBearer
-from ninja.errors import HttpError
-from ninja.responses import Response
-from rest_framework_simplejwt.tokens import AccessToken
-from rest_framework_simplejwt.exceptions import TokenError
+from typing import List
 
-from django.contrib.auth import get_user_model
-from django.http import JsonResponse
-
-from store.schemas import (
+from .schemas import (
     CategoryOut, ProductListOut, ProductDetailOut,
     CreateOrderIn, OrderOut, OrderItemOut,
 )
-from store.services import (
-    get_active_categories, get_active_products, get_product_by_id,
-    create_order,
-)
+from .services import get_active_categories, get_active_products, get_product_by_id, create_order
 from core.exceptions import NotFoundError, InsufficientStockError
 
-User = get_user_model()
-router = Router()
+router = Router(tags=["Store"])
 
 
-# ── JWT Bearer Auth ───────────────────────────────────────────────────────────
-
-class JWTAuth(HttpBearer):
-    def authenticate(self, request, token: str):
+class AuthBearer(HttpBearer):
+    def authenticate(self, request, token):
+        from rest_framework_simplejwt.tokens import AccessToken
+        from rest_framework_simplejwt.exceptions import TokenError
         try:
             validated = AccessToken(token)
-            user_id = validated["user_id"]
-            return User.objects.get(pk=user_id, is_active=True)
-        except (TokenError, User.DoesNotExist):
+            from accounts.models import User
+            return User.objects.get(pk=validated["user_id"])
+        except (TokenError, Exception):
             return None
 
 
-# ── Catalog endpoints (public) ────────────────────────────────────────────────
-
-@router.get("/categories", response=List[CategoryOut], tags=["Store"])
+@router.get("/categories", response=List[CategoryOut])
 def list_categories(request):
-    return list(get_active_categories())
+    return get_active_categories()
 
 
-@router.get("/products", response=List[ProductListOut], tags=["Store"])
+@router.get("/products", response=List[ProductListOut])
 def list_products(request):
-    return list(get_active_products())
+    return get_active_products()
 
 
-@router.get("/products/{product_id}", response=ProductDetailOut, tags=["Store"])
-def retrieve_product(request, product_id: int):
+@router.get("/products/{product_id}", response=ProductDetailOut)
+def get_product(request, product_id: int):
     try:
         return get_product_by_id(product_id)
-    except NotFoundError as exc:
-        raise HttpError(404, str(exc))
+    except NotFoundError as e:
+        return JsonResponse({"detail": str(e)}, status=404)
 
 
-# ── Order endpoints (auth required) ──────────────────────────────────────────
+@router.post("/orders", response=OrderOut, auth=AuthBearer())
+def create_order_endpoint(request, payload: CreateOrderIn):
+    items = [item.dict() for item in payload.items]
+    try:
+        result = create_order(
+            user=request.auth,
+            address_id=payload.address_id,
+            shipping_method_id=payload.shipping_method_id,
+            items=items,
+        )
+    except NotFoundError as e:
+        return JsonResponse({"detail": str(e)}, status=404)
+    except InsufficientStockError as e:
+        return JsonResponse({"detail": str(e)}, status=400)
 
-def _serialize_order(order) -> OrderOut:
+    order       = result["order"]
+    payment_url = result.get("payment_url")
+
+    order_items_out = [
+        OrderItemOut(
+            product_id=oi.product_id,
+            product_name=oi.product.name,
+            quantity=oi.quantity,
+            unit_price=oi.unit_price,
+        )
+        for oi in order.items.select_related("product").all()
+    ]
+
     return OrderOut(
         id=order.pk,
         status=order.status,
-        total_amount=order.total_amount,
+        total_price=order.total_price,
         shipping_cost=order.shipping_cost,
-        created_at=order.created_at,
-        items=[
-            OrderItemOut(
-                product_id=item.product_id,
-                quantity=item.quantity,
-                unit_price=item.unit_price,
-            )
-            for item in order.items.all()
-        ],
+        payment_url=payment_url,
+        items=order_items_out,
     )
-
-
-@router.post("/orders", response=OrderOut, auth=JWTAuth(), tags=["Orders"])
-def place_order(request, payload: CreateOrderIn):
-    user = request.auth
-    try:
-        order = create_order(user=user, data=payload)
-    except NotFoundError as exc:
-        raise HttpError(404, str(exc))
-    except InsufficientStockError as exc:
-        # HttpError فقط string قبول می‌کنه — مستقیم JsonResponse برمی‌گردونیم
-        return JsonResponse(
-            {
-                "error": "insufficient_stock",
-                "product": exc.product_name,
-                "available": exc.available,
-                "requested": exc.requested,
-            },
-            status=400,
-        )
-    return _serialize_order(order)

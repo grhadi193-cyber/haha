@@ -1,62 +1,67 @@
 from decimal import Decimal
-from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
-from ninja import Schema
 
 
-# ── Catalog ──────────────────────────────────────────────────────────────────
+# ── Catalog ──────────────────────────────────────────────────
 
-class CategoryOut(Schema):
-    id: int
+class CategoryOut(BaseModel):
+    id:   int
     name: str
     slug: str
 
-
-class ProductListOut(Schema):
-    id: int
-    name: str
-    slug: str
-    price: Decimal
-    stock: int
-    is_active: bool
+    class Config:
+        from_attributes = True
 
 
-class ProductDetailOut(Schema):
-    id: int
-    name: str
-    slug: str
-    description: str
-    price: Decimal
-    stock: int
-    weight: Decimal | None
-    is_active: bool
-    category: CategoryOut | None
+class ProductListOut(BaseModel):
+    id:         int
+    name:       str
+    slug:       str
+    price:      Decimal
+    stock:      int
+    is_active:  bool
+    category_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
 
 
-# ── Orders ────────────────────────────────────────────────────────────────────
+class ProductDetailOut(ProductListOut):
+    description: Optional[str] = None
+    weight:      Optional[Decimal] = None
 
-class OrderItemIn(Schema):
+
+# ── Orders ───────────────────────────────────────────────────
+
+class OrderItemIn(BaseModel):
     product_id: int
-    quantity: int
+    quantity:   int
 
 
-class CreateOrderIn(Schema):
-    address_id: int
+class CreateOrderIn(BaseModel):
+    address_id:         int
     shipping_method_id: int
-    items: List[OrderItemIn]
+    items:              List[OrderItemIn]
 
 
-class OrderItemOut(Schema):
-    product_id: int
-    quantity: int
-    unit_price: Decimal
+class OrderItemOut(BaseModel):
+    product_id:   int
+    product_name: str
+    quantity:     int
+    unit_price:   Decimal
+
+    class Config:
+        from_attributes = True
 
 
-class OrderOut(Schema):
-    id: int
-    status: str
-    total_amount: Decimal
-    shipping_cost: Decimal
-    created_at: datetime
-    items: List[OrderItemOut]
+class OrderOut(BaseModel):
+    id:              int
+    status:          str
+    total_price:     Decimal
+    shipping_cost:   Decimal
+    payment_url:     Optional[str] = None
+    items:           List[OrderItemOut]
+
+    class Config:
+        from_attributes = True

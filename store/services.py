@@ -1,117 +1,124 @@
+"""
+Store Service Layer.
+- No HttpRequest dependency.
+- create_order: atomic + select_for_update + triggers payment initiation.
+"""
+
+from __future__ import annotations
+
+import logging
 from decimal import Decimal
-from django.db import transaction
 
-from store.models import Category, Product, Order, OrderItem
-from store.schemas import CreateOrderIn
-from core.exceptions import NotFoundError, InsufficientStockError
+from django.db import transaction as db_transaction
+
 from shipping.services import calculate_shipping_cost
+from core.exceptions import NotFoundError, InsufficientStockError
+from .models import Category, Product, Order, OrderItem
+
+logger = logging.getLogger(__name__)
 
 
-# ── Catalog ──────────────────────────────────────────────────────────────────
+# ── Catalog ──────────────────────────────────────────────────
 
 def get_active_categories():
-    return Category.objects.filter(is_active=True)
+    return list(Category.objects.filter(is_active=True).order_by("name"))
 
 
 def get_active_products():
-    return Product.objects.filter(is_active=True).select_related("category")
+    return list(Product.objects.filter(is_active=True).select_related("category").order_by("name"))
 
 
 def get_product_by_id(product_id: int) -> Product:
     try:
-        return Product.objects.select_related("category").get(pk=product_id, is_active=True)
+        return Product.objects.get(pk=product_id, is_active=True)
     except Product.DoesNotExist:
-        raise NotFoundError(f"Product {product_id} not found.")
+        raise NotFoundError(f"Product #{product_id} not found.")
 
 
-# ── Orders ────────────────────────────────────────────────────────────────────
+# ── Orders ───────────────────────────────────────────────────
 
-def create_order(user, data: CreateOrderIn) -> Order:
+def create_order(user, address_id: int, shipping_method_id: int, items: list[dict]) -> dict:
     """
-    Create an Order transactionally.
+    Creates an Order atomically, then initiates a payment via PaymentGateway.
 
-    Steps:
-    1. Lock each requested Product row with select_for_update().
-    2. Validate stock; raise InsufficientStockError on shortfall.
-    3. Calculate shipping cost via shipping.services.
-    4. Persist Order + OrderItems; deduct stock.
-    5. Return the Order instance (payment handled in Phase 09).
+    Returns a dict with keys: order, payment_url
     """
     from accounts.models import Address
-    from shipping.models import ShippingMethod
 
-    with transaction.atomic():
-        # ── Validate address ownership ────────────────────────────────────
-        try:
-            address = Address.objects.get(pk=data.address_id, user=user)
-        except Address.DoesNotExist:
-            raise NotFoundError(f"Address {data.address_id} not found.")
+    # Validate address ownership
+    try:
+        address = Address.objects.get(pk=address_id, user=user)
+    except Address.DoesNotExist:
+        raise NotFoundError(f"Address #{address_id} not found.")
 
-        # ── Validate shipping method ──────────────────────────────────────
-        try:
-            shipping_method = ShippingMethod.objects.get(pk=data.shipping_method_id, is_active=True)
-        except ShippingMethod.DoesNotExist:
-            raise NotFoundError(f"ShippingMethod {data.shipping_method_id} not found.")
+    # Calculate shipping cost (raises NotFoundError if method not found)
+    shipping_cost: Decimal = calculate_shipping_cost(shipping_method_id)
 
-        # ── Lock & validate each product ──────────────────────────────────
-        product_ids = [item.product_id for item in data.items]
-        locked_products = {
+    with db_transaction.atomic():
+        # Lock products for stock check
+        product_ids = [item["product_id"] for item in items]
+        products = {
             p.pk: p
             for p in Product.objects.select_for_update().filter(pk__in=product_ids, is_active=True)
         }
 
-        for item in data.items:
-            if item.product_id not in locked_products:
-                raise NotFoundError(f"Product {item.product_id} not found.")
-            product = locked_products[item.product_id]
-            if product.stock < item.quantity:
+        order_items_data = []
+        total_price = Decimal("0")
+
+        for item in items:
+            pid = item["product_id"]
+            qty = item["quantity"]
+
+            if pid not in products:
+                raise NotFoundError(f"Product #{pid} not found or inactive.")
+
+            product = products[pid]
+
+            if product.stock < qty:
                 raise InsufficientStockError(
                     product_name=product.name,
                     available=product.stock,
-                    requested=item.quantity,
+                    requested=qty,
                 )
 
-        # ── Calculate costs ───────────────────────────────────────────────
-        total_weight: Decimal = sum(
-            (locked_products[item.product_id].weight or Decimal("0")) * item.quantity
-            for item in data.items
-        )
-        shipping_cost: Decimal = calculate_shipping_cost(
-            method_id=shipping_method.pk,
-            total_weight=total_weight,
-        )
+            product.stock -= qty
+            product.save(update_fields=["stock"])
 
-        items_total: Decimal = sum(
-            locked_products[item.product_id].price * item.quantity
-            for item in data.items
-        )
-        total_amount: Decimal = items_total + shipping_cost
+            line_total = product.price * qty
+            total_price += line_total
 
-        # ── Persist Order ─────────────────────────────────────────────────
-        order = Order.objects.create(
-            user=user,
-            address=address,
-            shipping_method=shipping_method,
-            status=Order.Status.PENDING,
-            shipping_cost=shipping_cost,
-            total_amount=total_amount,
-        )
-
-        # ── Persist OrderItems & deduct stock ─────────────────────────────
-        order_items = []
-        for item in data.items:
-            product = locked_products[item.product_id]
-            order_items.append(
+            order_items_data.append(
                 OrderItem(
-                    order=order,
                     product=product,
-                    quantity=item.quantity,
+                    quantity=qty,
                     unit_price=product.price,
                 )
             )
-            product.stock -= item.quantity
-            product.save(update_fields=["stock"])
 
-        OrderItem.objects.bulk_create(order_items)
+        total_price += shipping_cost
 
-        return order
+        order = Order.objects.create(
+            user=user,
+            address=address,
+            shipping_method_id=shipping_method_id,
+            shipping_cost=shipping_cost,
+            total_price=total_price,
+            status="pending",
+        )
+
+        for oi in order_items_data:
+            oi.order = order
+
+        OrderItem.objects.bulk_create(order_items_data)
+
+    # ── Payment initiation (outside inner atomic to avoid nesting issues) ──
+    payment_url: str | None = None
+    try:
+        from payment.services import PaymentGateway
+        payment_url, _txn_id = PaymentGateway.initiate(order)
+    except Exception as exc:
+        # Payment initiation failure should NOT roll back the order.
+        # The order is created; the user can retry payment separately.
+        logger.error("[Store] Payment initiation failed for order #%s: %s", order.pk, exc)
+
+    return {"order": order, "payment_url": payment_url}
