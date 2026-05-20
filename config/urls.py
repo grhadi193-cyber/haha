@@ -7,12 +7,12 @@ from ninja import NinjaAPI
 api = NinjaAPI(title="Shop API", version="1.0.0", docs_url="/docs")
 
 # -- Routers ------------------------------------------------------------------
-from core.api      import router as core_router
-from accounts.api  import router as accounts_router
-from store.api     import router as store_router
-from shipping.api  import router as shipping_router
-from payment.api   import router as payment_router
-from blog.api      import router as blog_router
+from core.api        import router as core_router
+from accounts.api    import router as accounts_router
+from store.api       import router as store_router
+from shipping.api    import router as shipping_router
+from payment.api     import router as payment_router
+from blog.api        import router as blog_router
 from admin_panel.api import router as admin_router
 
 api.add_router("/",         core_router)
@@ -26,9 +26,6 @@ api.add_router("/admin",    admin_router)
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/",   api.urls),
-    # NOTE: azbankgateways.urls is intentionally NOT included here.
-    # The library's urls.py is empty / has no urlpatterns in this version.
-    # Our gateway redirect is handled entirely inside payment/api.py callback.
 ]
 
 if settings.DEBUG:

@@ -126,7 +126,16 @@ SIMPLE_JWT = {
 # ---------------------------------------------------------------------------
 # OTP
 # ---------------------------------------------------------------------------
-OTP_EXPIRY_SECONDS = 120
+# مدت اعتبار کد OTP بر حسب دقیقه (قابل override از env)
+OTP_EXPIRY_MINUTES = env.int("OTP_EXPIRY_MINUTES", default=2)
+# حداقل فاصله زمانی بین دو ارسال OTP بر حسب ثانیه
+OTP_RATE_LIMIT_SECONDS = 60
+
+# ---------------------------------------------------------------------------
+# Pagination defaults
+# ---------------------------------------------------------------------------
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
 
 # ---------------------------------------------------------------------------
 # SMS / Kavenegar
@@ -152,17 +161,11 @@ PAYMENT_CALLBACK_BASE_URL = env("PAYMENT_CALLBACK_BASE_URL", default="http://127
 # ---------------------------------------------------------------------------
 # CORS
 # ---------------------------------------------------------------------------
-CORS_ALLOWED_ORIGINS = env.list(
-    "CORS_ALLOWED_ORIGINS",
-    default=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-)
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_CREDENTIALS = True
 
 # ---------------------------------------------------------------------------
-# Logging (base — handlers defined here; levels overridden per environment)
+# Logging (base — console only; production overrides with file handlers)
 # ---------------------------------------------------------------------------
 LOGGING = {
     "version": 1,

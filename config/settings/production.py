@@ -32,7 +32,10 @@ from .base import (  # explicit imports — no star import — avoids mutation i
     MEDIA_URL,
     MEDIA_ROOT,
     SIMPLE_JWT,
-    OTP_EXPIRY_SECONDS,
+    OTP_EXPIRY_MINUTES,
+    OTP_RATE_LIMIT_SECONDS,
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
     KAVENEGAR_API_KEY,
     SMS_SENDER,
     PAYMENT_CALLBACK_BASE_URL,
@@ -127,7 +130,7 @@ AZ_IRANIAN_BANK_GATEWAYS = {
 # ---------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
-    default=["http://localhost:3000"],
+    default=[],
 )
 
 # ---------------------------------------------------------------------------
@@ -171,12 +174,12 @@ LOGGING = {
     },
     "root": {
         "handlers": ["console", "file"],
-        "level": "INFO",
+        "level": "WARNING",
     },
     "loggers": {
         "django": {
             "handlers": ["console", "file", "error_file"],
-            "level": env("DJANGO_LOG_LEVEL", default="INFO"),
+            "level": env("DJANGO_LOG_LEVEL", default="WARNING"),
             "propagate": False,
         },
         "django.db.backends": {

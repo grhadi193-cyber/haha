@@ -1,8 +1,24 @@
 from decimal import Decimal
-from typing import List, Optional
+from typing import Generic, List, Optional, TypeVar
 from datetime import datetime
 from pydantic import BaseModel
 
+
+# ── Generic Paginated Response ─────────────────────────────────────────────
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """پاسخ صفحه‌بندی‌شده عمومی — قابل استفاده برای هر نوع داده."""
+    count: int
+    page: int
+    page_size: int
+    total_pages: int
+    results: List[T]
+
+
+# ── Category ─────────────────────────────────────────────────────────────────
 
 class CategoryOut(BaseModel):
     id: int
@@ -12,17 +28,7 @@ class CategoryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ProductListOut(BaseModel):
-    id: int
-    name: str
-    slug: str
-    price: Decimal
-    stock: int
-    image: Optional[str] = None
-    category: Optional[CategoryOut] = None
-
-    model_config = {"from_attributes": True}
-
+# ── Product Images ────────────────────────────────────────────────────────────
 
 class ProductImageOut(BaseModel):
     id: int
@@ -32,6 +38,25 @@ class ProductImageOut(BaseModel):
     is_cover: bool
 
     model_config = {"from_attributes": True}
+
+
+# ── Product List (public) ─────────────────────────────────────────────────────
+
+class ProductListOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    price: Decimal
+    discount_price: Optional[Decimal] = None
+    weight: Decimal = Decimal("0")
+    stock: int
+    image: Optional[str] = None
+    category: Optional[CategoryOut] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── Product Detail (public) ───────────────────────────────────────────────────
 
 class ProductDetailOut(BaseModel):
     id: int
@@ -53,6 +78,8 @@ class ProductDetailOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Order (Create) ────────────────────────────────────────────────────────────
+
 class OrderItemIn(BaseModel):
     product_id: int
     quantity: int
@@ -63,6 +90,8 @@ class CreateOrderIn(BaseModel):
     shipping_method_id: int
     items: List[OrderItemIn]
 
+
+# ── Order (Response) ──────────────────────────────────────────────────────────
 
 class OrderItemOut(BaseModel):
     product_id: int
@@ -85,7 +114,7 @@ class OrderOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Phase 12 — Order Tracking ──────────────────────────────────────────
+# ── Order Tracking (Phase 13) ─────────────────────────────────────────────────
 
 STATUS_DISPLAY = {
     "pending":    "درحال تایید",
@@ -102,11 +131,13 @@ class OrderItemTrackingOut(BaseModel):
     quantity: int
     unit_price: Decimal
 
+
 class OrderStatusHistoryOut(BaseModel):
     status: str
     status_display: str
     note: str
     created_at: datetime
+
 
 class UserOrderOut(BaseModel):
     id: int

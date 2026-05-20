@@ -1,4 +1,6 @@
 from typing import Optional
+
+from django.conf import settings
 from django.utils import timezone
 
 from core.exceptions import AppException
@@ -12,11 +14,16 @@ def send_otp(phone_number: str) -> None:
         phone_number=phone_number,
         defaults={"code": "000000", "expires_at": timezone.now()},
     )
-    
+
     if not created:
+        rate_limit = getattr(settings, "OTP_RATE_LIMIT_SECONDS", 60)
         time_since_last = (timezone.now() - record.last_sent_at).total_seconds()
-        if time_since_last < 60:
-            raise AppException(f"لطفاً {int(60 - time_since_last)} ثانیه دیگر تلاش کنید.", status_code=429)
+        if time_since_last < rate_limit:
+            remaining = int(rate_limit - time_since_last)
+            raise AppException(
+                f"لطفاً {remaining} ثانیه دیگر تلاش کنید.",
+                status_code=429,
+            )
 
     record.generate_code()
     send_otp_code(phone_number, record.code)
@@ -47,13 +54,25 @@ def get_addresses(user: User) -> list:
     return list(user.addresses.all())
 
 
-def create_address(user: User, title: str, province: str, city: str,
-                   street: str, postal_code: str, is_default: bool) -> Address:
+def create_address(
+    user: User,
+    title: str,
+    province: str,
+    city: str,
+    street: str,
+    postal_code: str,
+    is_default: bool,
+) -> Address:
     if is_default:
         user.addresses.filter(is_default=True).update(is_default=False)
     return Address.objects.create(
-        user=user, title=title, province=province, city=city,
-        street=street, postal_code=postal_code, is_default=is_default,
+        user=user,
+        title=title,
+        province=province,
+        city=city,
+        street=street,
+        postal_code=postal_code,
+        is_default=is_default,
     )
 
 
@@ -69,14 +88,36 @@ def get_profile(user: User) -> User:
     return user
 
 
-def update_profile(user: User, full_name: Optional[str], email: Optional[str]) -> User:
-    updated_fields = []
+def update_profile(
+    user: User,
+    full_name: Optional[str],
+    email: Optional[str],
+    national_id: Optional[str],
+) -> User:
+    updated_fields: list[str] = []
+
     if full_name is not None:
         user.full_name = full_name.strip()
         updated_fields.append("full_name")
+
     if email is not None:
-        user.email = email.strip()
+        user.email = email.strip() or None
         updated_fields.append("email")
+
+    if national_id is not None:
+        nid = national_id.strip() or None
+        if nid is not None:
+            # بررسی unique بودن — کاربر دیگری همین کد ملی را ندارد
+            if (
+                User.objects.filter(national_id=nid)
+                .exclude(pk=user.pk)
+                .exists()
+            ):
+                raise AppException("کد ملی تکراری است", status_code=400)
+        user.national_id = nid
+        updated_fields.append("national_id")
+
     if updated_fields:
         user.save(update_fields=updated_fields)
+
     return user

@@ -1,13 +1,24 @@
+from typing import Optional
+
 from django.http import JsonResponse
 from ninja import Router
 from ninja.security import HttpBearer
-from typing import List
 
 from .schemas import (
-    CategoryOut, ProductListOut, ProductDetailOut,
-    CreateOrderIn, OrderOut, OrderItemOut,
+    CategoryOut,
+    PaginatedResponse,
+    ProductDetailOut,
+    ProductListOut,
+    CreateOrderIn,
+    OrderOut,
+    OrderItemOut,
 )
-from .services import get_active_categories, get_active_products, get_product_by_id, create_order
+from .services import (
+    get_active_categories,
+    get_active_products,
+    get_product_by_id,
+    create_order,
+)
 from core.exceptions import NotFoundError, InsufficientStockError
 
 router = Router(tags=["Store"])
@@ -25,14 +36,40 @@ class AuthBearer(HttpBearer):
             return None
 
 
-@router.get("/categories", response=List[CategoryOut])
+@router.get("/categories", response=list[CategoryOut])
 def list_categories(request):
     return get_active_categories()
 
 
-@router.get("/products", response=List[ProductListOut])
-def list_products(request):
-    return get_active_products()
+@router.get("/products", response=PaginatedResponse[ProductListOut])
+def list_products(
+    request,
+    page: int = 1,
+    page_size: int = 20,
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,
+):
+    """
+    لیست محصولات فعال با pagination و جستجو.
+
+    - **page**: شماره صفحه (پیش‌فرض ۱)
+    - **page_size**: تعداد در هر صفحه (پیش‌فرض ۲۰، حداکثر ۱۰۰)
+    - **category_id**: فیلتر بر اساس دسته‌بندی
+    - **search**: جستجو در نام و توضیحات محصول
+    """
+    data = get_active_products(
+        category_id=category_id,
+        search=search,
+        page=page,
+        page_size=page_size,
+    )
+    return PaginatedResponse[ProductListOut](
+        count=data["count"],
+        page=data["page"],
+        page_size=data["page_size"],
+        total_pages=data["total_pages"],
+        results=[ProductListOut.model_validate(p) for p in data["results"]],
+    )
 
 
 @router.get("/products/{product_id}", response=ProductDetailOut)

@@ -62,6 +62,11 @@ chmod 600 .env     # restrict read access
 > **Mandatory for production:**
 > `SECRET_KEY`, `DATABASE_URL`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`
 
+> **Tip:** Generate a strong SECRET_KEY:
+> ```bash
+> python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+> ```
+
 ---
 
 ## 5 — Database
@@ -102,7 +107,12 @@ All issues flagged here must be resolved before going live.
 ## 8 — Gunicorn (run manually to test)
 
 ```bash
-gunicorn config.wsgi:application   --workers 3   --bind 0.0.0.0:8000   --timeout 120   --access-logfile /var/log/django/gunicorn_access.log   --error-logfile  /var/log/django/gunicorn_error.log
+gunicorn config.wsgi:application \
+  --workers 3 \
+  --bind 0.0.0.0:8000 \
+  --timeout 120 \
+  --access-logfile /var/log/django/gunicorn_access.log \
+  --error-logfile  /var/log/django/gunicorn_error.log
 ```
 
 Worker formula: `(2 × CPU cores) + 1`
@@ -124,7 +134,12 @@ Group=appuser
 WorkingDirectory=/srv/app
 EnvironmentFile=/srv/app/.env
 Environment="DJANGO_SETTINGS_MODULE=config.settings.production"
-ExecStart=/srv/app/venv/bin/gunicorn config.wsgi:application           --workers 3           --bind unix:/run/app.sock           --timeout 120           --access-logfile /var/log/django/gunicorn_access.log           --error-logfile  /var/log/django/gunicorn_error.log
+ExecStart=/srv/app/venv/bin/gunicorn config.wsgi:application \
+          --workers 3 \
+          --bind unix:/run/app.sock \
+          --timeout 120 \
+          --access-logfile /var/log/django/gunicorn_access.log \
+          --error-logfile  /var/log/django/gunicorn_error.log
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 RestartSec=5
@@ -217,7 +232,7 @@ sudo systemctl status app
 
 | File | Content |
 |------|---------|
-| `/var/log/django/django.log` | All INFO+ application events |
+| `/var/log/django/django.log` | All WARNING+ application events |
 | `/var/log/django/django_errors.log` | ERROR+ only (alerts / crashes) |
 | `/var/log/django/gunicorn_access.log` | HTTP access log |
 | `/var/log/django/gunicorn_error.log` | Gunicorn worker errors |
@@ -232,3 +247,24 @@ git checkout <COMMIT_HASH>
 python manage.py migrate --noinput   # if migrations rolled back
 sudo systemctl restart app
 ```
+
+---
+
+## 15 — Environment variables reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SECRET_KEY` | ✅ | Django secret key (min 50 chars) |
+| `DEBUG` | ✅ | `False` in production |
+| `DATABASE_URL` | ✅ | `postgres://USER:PASS@HOST:5432/DB` |
+| `ALLOWED_HOSTS` | ✅ | Comma-separated hostnames |
+| `CORS_ALLOWED_ORIGINS` | ✅ | Comma-separated frontend origins |
+| `KAVENEGAR_API_KEY` | ✅ | SMS gateway API key |
+| `ZARINPAL_MERCHANT_CODE` | ✅ | Payment gateway merchant ID |
+| `PAYMENT_CALLBACK_BASE_URL` | ✅ | Public base URL for payment callbacks |
+| `OTP_EXPIRY_MINUTES` | — | Default: `2` |
+| `SECURE_SSL_REDIRECT` | — | Default: `True` |
+| `SECURE_HSTS_SECONDS` | — | Default: `31536000` |
+| `DB_CONN_MAX_AGE` | — | Default: `60` |
+| `LOG_DIR` | — | Default: `BASE_DIR/logs` |
+| `DJANGO_LOG_LEVEL` | — | Default: `WARNING` |

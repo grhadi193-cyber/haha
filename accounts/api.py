@@ -49,8 +49,13 @@ def list_addresses(request):
 @router.post("/addresses", auth=_auth, response=AddressOut, summary="افزودن آدرس")
 def create_address(request, payload: AddressIn):
     return svc.create_address(
-        request.auth, payload.title, payload.province, payload.city,
-        payload.street, payload.postal_code, payload.is_default,
+        request.auth,
+        payload.title,
+        payload.province,
+        payload.city,
+        payload.street,
+        payload.postal_code,
+        payload.is_default,
     )
 
 
@@ -70,7 +75,15 @@ def get_profile(request):
 
 @router.patch("/profile", auth=_auth, response=ProfileOut, summary="ویرایش پروفایل کاربر")
 def update_profile(request, payload: UpdateProfileIn):
-    return svc.update_profile(request.auth, payload.full_name, payload.email)
+    try:
+        return svc.update_profile(
+            request.auth,
+            payload.full_name,
+            payload.email,
+            payload.national_id,
+        )
+    except AppException as e:
+        return JsonResponse({"detail": e.detail}, status=e.status_code)
 
 
 @router.get("/orders", auth=_auth, summary="لیست سفارش‌های کاربر")
@@ -90,3 +103,17 @@ def my_order_detail(request, order_id: int):
     except AppException as e:
         return JsonResponse({"detail": e.detail}, status=e.status_code)
     return UserOrderOut.model_validate(order)
+
+
+@router.delete("/orders/{order_id}", auth=_auth, summary="لغو سفارش توسط کاربر")
+def cancel_my_order(request, order_id: int):
+    """
+    لغو سفارش — فقط سفارش‌های با وضعیت «pending» قابل لغو هستند.
+    موجودی محصولات به صورت خودکار برگشت داده می‌شود.
+    """
+    from store.services import cancel_order
+    try:
+        cancel_order(order_id=order_id, user=request.auth)
+    except AppException as e:
+        return JsonResponse({"detail": e.detail}, status=e.status_code)
+    return {"detail": "سفارش با موفقیت لغو شد"}

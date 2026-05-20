@@ -5,6 +5,3 @@ gunicorn>=21.2.0
 
 # PostgreSQL adapter
 psycopg2-binary>=2.9.9
-
-# Static file serving
-whitenoise[brotli]>=6.6.0

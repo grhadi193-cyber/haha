@@ -1,8 +1,18 @@
 from decimal import Decimal
+from typing import List, Optional
+
 from ninja import Schema
 
 
-from typing import List, Optional
+# ── ShippingZone ──────────────────────────────────────────────────────────────
+
+class ShippingZoneOut(Schema):
+    id: int
+    name: str
+    provinces: List[str]
+
+
+# ── ShippingMethod ────────────────────────────────────────────────────────────
 
 class ShippingMethodOut(Schema):
     id: int
@@ -13,13 +23,18 @@ class ShippingMethodOut(Schema):
     min_days: int
     max_days: int
 
+
+# ── ShippingOption (برای POST /options) ───────────────────────────────────────
+
 class ShippingItemIn(Schema):
     product_id: int
     quantity: int
 
+
 class ShippingOptionIn(Schema):
     province: str
     items: List[ShippingItemIn]
+
 
 class ShippingOptionOut(Schema):
     id: int
