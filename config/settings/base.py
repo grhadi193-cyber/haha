@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "shipping",
     "payment",
     "blog",
+    "admin_panel",
 ]
 
 MIDDLEWARE = [

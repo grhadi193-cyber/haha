@@ -3,7 +3,7 @@ from ninja import Router, Query
 from ninja.security import HttpBearer
 
 from .schemas import InitiatePaymentIn, InitiatePaymentOut, VerifyCallbackIn
-from .services import PaymentGateway
+from .orchestrator import start_payment, verify_payment
 from store.models import Order
 from core.exceptions import NotFoundError
 
@@ -40,7 +40,7 @@ def initiate_payment(request, payload: InitiatePaymentIn):
     if order.status == "paid":
         return JsonResponse({"detail": "Order is already paid."}, status=400)
 
-    payment_url, transaction_id = PaymentGateway.initiate(order)
+    payment_url, transaction_id = start_payment(order)
     return InitiatePaymentOut(payment_url=payment_url, transaction_id=transaction_id)
 
 
@@ -73,7 +73,7 @@ def payment_callback(request, params: Query[VerifyCallbackIn]):
                 return JsonResponse({"detail": "Transaction not found for given Authority."}, status=404)
             transaction_id = txn.pk
 
-    success = PaymentGateway.verify(transaction_id, raw_flat)
+    success = verify_payment(transaction_id, raw_flat)
 
     if success:
         return JsonResponse({"status": "paid", "transaction_id": transaction_id})

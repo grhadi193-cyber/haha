@@ -10,6 +10,7 @@ class Transaction(models.Model):
 
     order            = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="transactions")
     amount           = models.DecimalField(max_digits=14, decimal_places=0)
+    provider         = models.CharField(max_length=50, default="zarinpal")
     ref_id           = models.CharField(max_length=128, blank=True, default="")
     status           = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING)
     gateway_response = models.JSONField(default=dict, blank=True)

@@ -25,3 +25,12 @@ class InsufficientStockError(Exception):
             f"Insufficient stock for '{product_name}': "
             f"requested {requested}, available {available}."
         )
+
+
+class AppException(Exception):
+    """Generic app exception with HTTP status code."""
+
+    def __init__(self, detail: str, status_code: int = 400):
+        self.detail = detail
+        self.status_code = status_code
+        super().__init__(detail)
