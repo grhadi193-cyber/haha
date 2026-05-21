@@ -2,6 +2,7 @@ from typing import List
 from ninja import Router
 from django.http import JsonResponse
 
+from core.auth import AuthBearer
 from core.exceptions import AppException
 from .schemas import (
     SendOTPIn, VerifyOTPIn, TokenOut,
@@ -12,13 +13,7 @@ from . import services as svc
 
 router = Router(tags=["Auth"])
 
-
-def _get_auth_bearer():
-    from store.api import AuthBearer
-    return AuthBearer()
-
-
-_auth = _get_auth_bearer()
+_auth = AuthBearer()
 
 
 @router.post("/send-otp", auth=None, summary="ارسال کد OTP")
@@ -26,7 +21,10 @@ def send_otp(request, payload: SendOTPIn):
     try:
         svc.send_otp(payload.phone_number)
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "otp_error", "message": e.detail},
+            status=e.status_code,
+        )
     return {"detail": "کد تایید ارسال شد"}
 
 
@@ -36,7 +34,10 @@ def verify_otp(request, payload: VerifyOTPIn):
     try:
         user = svc.verify_otp(payload.phone_number, payload.code)
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "otp_invalid", "message": e.detail},
+            status=e.status_code,
+        )
     refresh = RefreshToken.for_user(user)
     return TokenOut(access=str(refresh.access_token), refresh=str(refresh))
 
@@ -64,7 +65,10 @@ def delete_address(request, address_id: int):
     try:
         svc.delete_address(request.auth, address_id)
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "address_error", "message": e.detail},
+            status=e.status_code,
+        )
     return {"detail": "آدرس حذف شد"}
 
 
@@ -83,7 +87,10 @@ def update_profile(request, payload: UpdateProfileIn):
             payload.national_id,
         )
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "profile_error", "message": e.detail},
+            status=e.status_code,
+        )
 
 
 @router.get("/orders", auth=_auth, summary="لیست سفارش‌های کاربر")
@@ -101,7 +108,10 @@ def my_order_detail(request, order_id: int):
     try:
         order = get_user_order_detail(request.auth, order_id)
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "order_not_found", "message": e.detail},
+            status=e.status_code,
+        )
     return UserOrderOut.model_validate(order)
 
 
@@ -115,5 +125,8 @@ def cancel_my_order(request, order_id: int):
     try:
         cancel_order(order_id=order_id, user=request.auth)
     except AppException as e:
-        return JsonResponse({"detail": e.detail}, status=e.status_code)
+        return JsonResponse(
+            {"error": True, "code": "cancel_error", "message": e.detail},
+            status=e.status_code,
+        )
     return {"detail": "سفارش با موفقیت لغو شد"}

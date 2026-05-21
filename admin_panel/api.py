@@ -36,10 +36,10 @@ from django.db.models import Count, F, Q, Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from ninja import Router
-from ninja.security import HttpBearer
 from pydantic import BaseModel
 
 from accounts.models import User
+from core.auth import AdminBearer
 from core.exceptions import AppException, NotFoundError
 from store.models import Order, OrderStatusHistory, Product
 from store.schemas import UserOrderOut
@@ -47,27 +47,6 @@ from store.schemas import UserOrderOut
 logger = logging.getLogger(__name__)
 
 router = Router(tags=["Admin"])
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Authentication
-# ─────────────────────────────────────────────────────────────────────────────
-
-class AdminBearer(HttpBearer):
-    """JWT bearer که فقط کاربران is_staff=True را قبول می‌کند."""
-
-    def authenticate(self, request, token):
-        from rest_framework_simplejwt.exceptions import TokenError
-        from rest_framework_simplejwt.tokens import AccessToken
-        try:
-            validated = AccessToken(token)
-            user = User.objects.get(pk=validated["user_id"])
-            if not user.is_staff:
-                return None
-            return user
-        except (TokenError, User.DoesNotExist, Exception):
-            return None
-
 
 _auth = AdminBearer()
 
@@ -258,11 +237,6 @@ def admin_dashboard(request):
     summary="لیست کاربران (ادمین)",
 )
 def admin_list_users(request, page: int = 1, page_size: int = 20, search: str = ""):
-    """
-    لیست کاربران با pagination و جستجو.
-    search روی phone_number و full_name اعمال می‌شود.
-    پاسخ شامل total_pages است.
-    """
     qs = User.objects.annotate(order_count=Count("orders")).order_by("-date_joined")
     if search:
         qs = qs.filter(
@@ -299,7 +273,6 @@ def admin_list_users(request, page: int = 1, page_size: int = 20, search: str = 
     summary="جزئیات کاربر (ادمین)",
 )
 def admin_get_user(request, user_id: int):
-    """جزئیات یک کاربر + تعداد سفارش‌هایش."""
     try:
         user = User.objects.annotate(order_count=Count("orders")).get(pk=user_id)
     except User.DoesNotExist:
@@ -324,10 +297,6 @@ def admin_get_user(request, user_id: int):
     summary="ویرایش کاربر (ادمین)",
 )
 def admin_update_user(request, user_id: int, payload: AdminUserUpdateIn):
-    """
-    ویرایش full_name و/یا is_active یک کاربر.
-    فیلدهایی که None هستند تغییر نمی‌کنند.
-    """
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
@@ -361,11 +330,6 @@ def admin_update_user(request, user_id: int, payload: AdminUserUpdateIn):
     summary="لیست سفارش‌ها (ادمین)",
 )
 def admin_list_orders(request, page: int = 1, page_size: int = 20, status: str = ""):
-    """
-    همه سفارش‌ها با امکان فیلتر بر اساس status و pagination.
-    پاسخ شامل total_pages است.
-    مثال: GET /api/admin/orders/?status=pending&page=2
-    """
     qs = (
         Order.objects.all()
         .prefetch_related("items__product", "history")
@@ -393,7 +357,6 @@ def admin_list_orders(request, page: int = 1, page_size: int = 20, status: str =
     summary="جزئیات سفارش (ادمین)",
 )
 def admin_get_order(request, order_id: int):
-    """جزئیات کامل یک سفارش + history."""
     try:
         order = (
             Order.objects
@@ -414,11 +377,6 @@ def admin_get_order(request, order_id: int):
     summary="تغییر وضعیت سفارش (ادمین)",
 )
 def admin_update_order_status(request, order_id: int, payload: AdminOrderStatusIn):
-    """
-    تغییر وضعیت سفارش + ثبت OrderStatusHistory.
-    در صورت shipped شدن، shipped_at خودکار ثبت می‌شود.
-    در صورت delivered شدن، delivered_at خودکار ثبت می‌شود.
-    """
     from store.services import update_order_status as svc_update
     try:
         svc_update(
@@ -451,11 +409,6 @@ def admin_list_products(
     search: str = "",
     is_active: Optional[bool] = None,
 ):
-    """
-    لیست همه محصولات (فعال و غیرفعال) با pagination و جستجو.
-    فیلتر: is_active=true/false
-    پاسخ شامل total_pages است.
-    """
     qs = Product.objects.select_related("category").order_by("-created_at")
     if search:
         qs = qs.filter(Q(name__icontains=search) | Q(sku__icontains=search))
@@ -480,7 +433,6 @@ def admin_list_products(
     summary="ایجاد محصول جدید (ادمین)",
 )
 def admin_create_product(request, payload: AdminProductIn):
-    """ساخت محصول جدید."""
     from store.models import Category
     category = None
     if payload.category_id:
@@ -516,7 +468,6 @@ def admin_create_product(request, payload: AdminProductIn):
     summary="جزئیات محصول (ادمین)",
 )
 def admin_get_product(request, product_id: int):
-    """جزئیات کامل یک محصول (شامل غیرفعال‌ها)."""
     try:
         product = Product.objects.select_related("category").get(pk=product_id)
     except Product.DoesNotExist:
@@ -534,7 +485,6 @@ def admin_get_product(request, product_id: int):
     summary="ویرایش محصول (ادمین)",
 )
 def admin_update_product(request, product_id: int, payload: AdminProductIn):
-    """ویرایش کامل یک محصول."""
     from store.models import Category
     try:
         product = Product.objects.get(pk=product_id)
@@ -577,12 +527,6 @@ def admin_update_product(request, product_id: int, payload: AdminProductIn):
     summary="تغییر موجودی محصول (ادمین)",
 )
 def admin_update_stock(request, product_id: int, payload: AdminStockUpdateIn):
-    """
-    تغییر موجودی با quantity_delta.
-    مثبت = اضافه کردن به موجودی.
-    منفی = کسر از موجودی.
-    موجودی نمی‌تواند زیر صفر برود.
-    """
     try:
         with db_transaction.atomic():
             product = Product.objects.select_for_update().get(pk=product_id)
@@ -640,12 +584,6 @@ def admin_delete_product(request, product_id: int):
     summary="آنالیتیکس فروش (ادمین)",
 )
 def admin_analytics_overview(request):
-    """
-    آمار درآمد و سفارش‌ها:
-    - درآمد امروز / این هفته / این ماه
-    - تعداد سفارش به تفکیک وضعیت
-    - ۵ محصول پرفروش
-    """
     now = timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = today_start - timedelta(days=today_start.weekday())
@@ -762,7 +700,6 @@ def _settings_to_out(s, request) -> AdminSiteSettingsOut:
     summary="دریافت تنظیمات سایت (ادمین)",
 )
 def admin_get_settings(request):
-    """تنظیمات کامل سایت را برمی‌گرداند."""
     from core.models import SiteSettings
     return _settings_to_out(SiteSettings.get(), request)
 

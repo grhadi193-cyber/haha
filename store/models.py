@@ -112,8 +112,12 @@ class Order(models.Model):
         return f"Order#{self.pk} — {self.user.phone_number}"
 
     def save(self, *args, **kwargs):
+        """Auto-generate tracking_number after first INSERT only."""
+        is_new = self.pk is None
         super().save(*args, **kwargs)
-        if not self.tracking_number:
+        # Only set tracking_number on the very first save to avoid
+        # an extra UPDATE on every subsequent save() call.
+        if is_new and not self.tracking_number:
             self.tracking_number = f"ORD-{self.pk:06d}"
             Order.objects.filter(pk=self.pk).update(tracking_number=self.tracking_number)
 

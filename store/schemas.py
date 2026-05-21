@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Generic, List, Optional, TypeVar
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 # ── Generic Paginated Response ─────────────────────────────────────────────
@@ -55,6 +55,18 @@ class ProductListOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @computed_field
+    @property
+    def effective_price(self) -> Decimal:
+        """The price the customer actually pays — discount_price if set, else price."""
+        return self.discount_price if self.discount_price is not None else self.price
+
+    @computed_field
+    @property
+    def is_on_sale(self) -> bool:
+        """True when a discount is actively applied."""
+        return self.discount_price is not None and self.discount_price < self.price
+
 
 # ── Product Detail (public) ───────────────────────────────────────────────────
 
@@ -76,6 +88,17 @@ class ProductDetailOut(BaseModel):
     images: List[ProductImageOut] = []
 
     model_config = {"from_attributes": True}
+
+    @computed_field
+    @property
+    def effective_price(self) -> Decimal:
+        """The price the customer actually pays."""
+        return self.discount_price if self.discount_price is not None else self.price
+
+    @computed_field
+    @property
+    def is_on_sale(self) -> bool:
+        return self.discount_price is not None and self.discount_price < self.price
 
 
 # ── Order (Create) ────────────────────────────────────────────────────────────
@@ -105,6 +128,7 @@ class OrderItemOut(BaseModel):
 class OrderOut(BaseModel):
     id: int
     status: str
+    status_display: str = ""
     total_price: Decimal
     shipping_cost: Decimal
     tracking_number: str = ""
@@ -114,7 +138,7 @@ class OrderOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── Order Tracking (Phase 13) ─────────────────────────────────────────────────
+# ── Order Tracking ────────────────────────────────────────────────────────────
 
 STATUS_DISPLAY = {
     "pending":    "درحال تایید",

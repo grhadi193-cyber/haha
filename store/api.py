@@ -2,8 +2,8 @@ from typing import Optional
 
 from django.http import JsonResponse
 from ninja import Router
-from ninja.security import HttpBearer
 
+from core.auth import AuthBearer
 from .schemas import (
     CategoryOut,
     PaginatedResponse,
@@ -23,17 +23,7 @@ from core.exceptions import NotFoundError, InsufficientStockError
 
 router = Router(tags=["Store"])
 
-
-class AuthBearer(HttpBearer):
-    def authenticate(self, request, token):
-        from rest_framework_simplejwt.tokens import AccessToken
-        from rest_framework_simplejwt.exceptions import TokenError
-        try:
-            validated = AccessToken(token)
-            from accounts.models import User
-            return User.objects.get(pk=validated["user_id"])
-        except (TokenError, Exception):
-            return None
+_auth = AuthBearer()
 
 
 @router.get("/categories", response=list[CategoryOut])
@@ -76,11 +66,14 @@ def list_products(
 def get_product(request, product_id: int):
     try:
         return get_product_by_id(product_id)
-    except NotFoundError as e:
-        return JsonResponse({"detail": str(e)}, status=404)
+    except NotFoundError:
+        return JsonResponse(
+            {"error": True, "code": "not_found", "message": "محصول یافت نشد."},
+            status=404,
+        )
 
 
-@router.post("/orders", response=OrderOut, auth=AuthBearer())
+@router.post("/orders", response=OrderOut, auth=_auth)
 def create_order_endpoint(request, payload: CreateOrderIn):
     items = [item.dict() for item in payload.items]
     try:
@@ -91,17 +84,23 @@ def create_order_endpoint(request, payload: CreateOrderIn):
             items=items,
         )
     except NotFoundError as e:
-        return JsonResponse({"detail": str(e)}, status=404)
+        return JsonResponse(
+            {"error": True, "code": "not_found", "message": str(e)},
+            status=404,
+        )
     except InsufficientStockError as e:
-        return JsonResponse({"detail": str(e)}, status=400)
+        return JsonResponse(
+            {"error": True, "code": "insufficient_stock", "message": str(e)},
+            status=400,
+        )
 
-    order       = result["order"]
+    order = result["order"]
     payment_url = result.get("payment_url")
 
     order_items_out = [
         OrderItemOut(
             product_id=oi.product_id,
-            product_name=oi.product.name,
+            product_name=oi.product_name_snapshot or oi.product.name,
             quantity=oi.quantity,
             unit_price=oi.unit_price,
         )
